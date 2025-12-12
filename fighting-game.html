@@ -1,43 +1,43 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>2D Fighting Game (HTML5 Canvas)</title>
-  <style>
-    html,body{height:100%;margin:0;background:#111;color:#eee;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial}
-    .wrap{display:flex;flex-direction:column;align-items:center;gap:12px;padding:18px}
-    canvas{background: linear-gradient(#20232a,#121416); border:6px solid #222; border-radius:8px}
-    .ui{display:flex;gap:12px;width:1220px;justify-content:space-between}
-    .hud{display:flex;flex-direction:column;gap:6px}
-    .health{height:18px;width:300px;background:#333;border-radius:6px;overflow:hidden}
-    .bar{height:100%;border-radius:6px}
-    .controls{font-size:13px;opacity:.9}
-    button{padding:8px 12px;border-radius:6px;border:none;background:#2d8cff;color:#fff}
-  </style>
-</head>
-<body>
-  <div class="wrap">
-    <h1>2D Fighting Game — local 2-player</h1>
-    <div class="ui">
-      <div class="hud">
-        <div>Player 1 <span id="p1wins">Wins: 0</span></div>
-        <div class="health"><div id="p1bar" class="bar" style="background:linear-gradient(90deg,#8ef,#08f);width:100%"></div></div>
-      </div>
-      <div style="align-self:center">Round: <span id="round">1</span> — Press R to reset</div>
-      <div class="hud" style="align-items:flex-end">
-        <div>Player 2 <span id="p2wins">Wins: 0</span></div>
-        <div class="health"><div id="p2bar" class="bar" style="background:linear-gradient(90deg,#f88,#f00);width:100%"></div></div>
-      </div>
-    </div>
-    <canvas id="game" width="1200" height="540"></canvas>
-
-    <!-- Character select overlay -->
-    <div id="charSelect" style="position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);background:rgba(10,10,10,0.95);padding:18px;border-radius:10px;display:flex;gap:18px;z-index:20">
-      <div style="min-width:260px">
-        <h3 style="margin:4px">Choose Player 1</h3>
-        <canvas id="p1preview" width="200" height="260" style="background:#111;border-radius:6px;margin-bottom:8px"></canvas>
-        <div id="p1chars"></div>
+  draw(ctx){
+    // stickman drawing with weapon and simple animation
+    ctx.save();
+    const rect = this.rect();
+    const cx = this.x + PLAYER_W/2, cy = this.y + 12; // head center
+    // head
+    circle(ctx, cx, cy, 12, '#ffd6b3');
+    // face
+    const fakePlayer = {x: this.x, y: this.y, char: this.char}; drawFace(ctx, fakePlayer);
+    // body line
+    ctx.strokeStyle = this.char.color; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx, cy + 12);
+    const hipY = this.y + rect.h - 20; ctx.lineTo(cx, hipY); ctx.stroke();
+    // arms (swing)
+    const swing = (this.animState === 'walk') ? Math.sin(this.frame * 0.6) * 0.9 : 0.15 * Math.sin(this.frame * 0.3);
+    ctx.beginPath(); ctx.moveTo(cx, cy + 20); ctx.lineTo(cx - 18 - swing * 8, cy + 28); ctx.moveTo(cx, cy + 20); ctx.lineTo(cx + 18 + swing * 8, cy + 28); ctx.stroke();
+    // legs
+    ctx.beginPath(); ctx.moveTo(cx, hipY); ctx.lineTo(cx - 12 + swing * 6, hipY + 28); ctx.moveTo(cx, hipY); ctx.lineTo(cx + 12 - swing * 6, hipY + 28); ctx.stroke();
+    // torso clothing (a small badge of color)
+    ctx.fillStyle = shadeColor(this.char.color, -10); roundRect(ctx, cx - 8, cy + 18, 16, 18, 6, ctx.fillStyle);
+    // weapon in right hand (relative to facing)
+    const handX = cx + (this.facing === 1 ? 18 + swing*6 : -18 - swing*6);
+    const handY = cy + 28;
+    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 3;
+    if(this.char.weapon === 'sword' || this.char.weapon === 'katana'){
+      ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(handX + this.facing * 28, handY - 4); ctx.stroke();
+    } else if(this.char.weapon === 'spear'){
+      ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(handX + this.facing * 40, handY - 6); ctx.stroke(); circle(ctx, handX + this.facing * 40, handY - 6, 3, '#f5e');
+    } else if(this.char.weapon === 'gun' || this.char.weapon === 'pistol'){
+      roundRect(ctx, handX + this.facing*6, handY - 6, 18, 8, 3, '#333');
+    } else if(this.char.weapon === 'staff'){
+      ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(handX + this.facing * 36, handY - 24); ctx.stroke(); circle(ctx, handX + this.facing * 36, handY - 24, 5, '#9cf');
+    } else if(this.char.weapon === 'bow'){
+      ctx.beginPath(); ctx.moveTo(handX - this.facing*6, handY - 6); ctx.quadraticCurveTo(handX + this.facing*8, handY, handX - this.facing*6, handY + 12); ctx.stroke();
+    } else if(this.char.weapon === 'fists'){
+      ctx.fillStyle = shadeColor(this.char.color,-30); circle(ctx, handX, handY, 5, ctx.fillStyle);
+    }
+    ctx.restore();
+    // draw combo above player
+    if(this.combo > 1){ ctx.fillStyle = '#ffeb3b'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(this.combo + 'x', this.x + PLAYER_W/2, this.y - 8); ctx.textAlign = 'start'; }
+  }
       </div>
       <div style="min-width:260px">
         <h3 style="margin:4px">Choose Player 2</h3>
@@ -320,32 +320,26 @@ function shadeColor(hex, percent) {
 
 // Draw facial features depending on character data
 function drawFace(ctx, player){
-  const face = player.char.face || 'default';
+  const face = player.char && player.char.face ? player.char.face : 'default';
+  // draw relative to player's head center
   ctx.save();
-  ctx.translate(player.x, player.y);
-  // head center
-  const cx = PLAYER_W/2, cy = 12;
+  ctx.translate(player.x + PLAYER_W/2, player.y + 12);
   ctx.fillStyle = '#000';
-  if(face === 'pakor'){
-    // fierce eyes and horns
-    ctx.fillStyle = '#000'; ctx.fillRect(cx-8, cy-2, 6, 4);
-    ctx.fillRect(cx+4, cy-2, 6, 4);
-    // mouth
-    ctx.fillStyle = '#700'; ctx.fillRect(cx-6, cy+8, 12, 3);
-    // horns
-    roundRect(ctx, cx-14, -4, 6, 8, 3, '#ccc');
-    roundRect(ctx, cx+8, -4, 6, 8, 3, '#ccc');
-  } else if(face === 'lina'){
-    // bright eyes, smile
-    ctx.fillStyle = '#000'; ctx.fillRect(cx-7, cy-2, 4, 4); ctx.fillRect(cx+3, cy-2, 4, 4);
-    ctx.fillStyle = '#b00'; ctx.fillRect(cx-6, cy+8, 12, 3);
-  } else if(face === 'mini'){
-    ctx.fillStyle = '#000'; ctx.fillRect(cx-6, cy, 3, 3); ctx.fillRect(cx+4, cy, 3, 3);
-    ctx.fillStyle = '#900'; ctx.fillRect(cx-3, cy+8, 6, 3);
+  if(face === 'grim'){
+    ctx.fillStyle = '#000'; ctx.fillRect(-8, -2, 6, 4); ctx.fillRect(4, -2, 6, 4);
+    ctx.fillStyle = '#700'; ctx.fillRect(-6, 8, 12, 3);
+  } else if(face === 'goggles'){
+    ctx.fillStyle = '#222'; ctx.fillRect(-10, -3, 20, 6); ctx.fillStyle = '#fff'; ctx.fillRect(-6, -1, 5, 3); ctx.fillRect(1, -1, 5, 3);
+  } else if(face === 'stoic'){
+    ctx.fillStyle = '#000'; ctx.fillRect(-7, -1, 4, 3); ctx.fillRect(3, -1, 4, 3); ctx.fillStyle='#600'; ctx.fillRect(-4,8,8,3);
+  } else if(face === 'wizard'){
+    ctx.fillStyle='#000'; ctx.fillRect(-6,-2,4,4); ctx.fillRect(2,-2,4,4); roundRect(ctx,-14,-10,28,8,4,'#aaf');
+  } else if(face === 'masked'){
+    ctx.fillStyle='#111'; ctx.fillRect(-8,-3,16,6); ctx.fillStyle='#fff'; ctx.fillRect(-4,-1,3,3); ctx.fillRect(1,-1,3,3);
+  } else if(face === 'smile'){
+    ctx.fillStyle='#000'; ctx.fillRect(-6,-1,4,3); ctx.fillRect(2,-1,4,3); ctx.fillStyle='#b00'; ctx.fillRect(-4,8,8,3);
   } else {
-    // default simple eyes and mouth
-    ctx.fillStyle = '#000'; ctx.fillRect(cx-6, cy-2, 4, 4); ctx.fillRect(cx+4, cy-2, 4, 4);
-    ctx.fillStyle = '#600'; ctx.fillRect(cx-4, cy+8, 8, 3);
+    ctx.fillStyle = '#000'; ctx.fillRect(-6, -2, 4, 4); ctx.fillRect(4, -2, 4, 4); ctx.fillStyle = '#600'; ctx.fillRect(-4, 8, 8, 3);
   }
   ctx.restore();
 }
@@ -357,16 +351,26 @@ function drawCharPreview(canvasId, char){
   const ctxp = c.getContext('2d');
   ctxp.clearRect(0,0,c.width,c.height);
   // center and scale
-  ctxp.save(); ctxp.translate(c.width/2 - 40, 40);
-  const shirt = char.color; const pants = shadeColor(char.color, -40); const skin = '#ffd6b3';
+  // draw a stickman preview centered
+  ctxp.save();
+  const px = c.width/2 - 20, py = 40;
   // head
-  circle(ctxp, 40, 12, 16, skin);
-  roundRect(ctxp, 40-16, 0, 32, 12, 6, shadeColor(char.color,-70));
-  roundRect(ctxp, 16, 36, 48, 60, 8, shirt);
-  roundRect(ctxp, 8, 90, 18, 28, 6, pants);
-  roundRect(ctxp, 60, 90, 18, 28, 6, pants);
-  // face
-  const fakePlayer = {x:0,y:0,char:char}; drawFace(ctxp, fakePlayer);
+  circle(ctxp, px + PLAYER_W/2, py, 14, '#ffd6b3');
+  // torso
+  ctxp.strokeStyle = char.color; ctxp.lineWidth = 4;
+  ctxp.beginPath(); ctxp.moveTo(px + PLAYER_W/2, py + 12); ctxp.lineTo(px + PLAYER_W/2, py + 52); ctxp.stroke();
+  // arms
+  ctxp.beginPath(); ctxp.moveTo(px + PLAYER_W/2 - 18, py + 28); ctxp.lineTo(px + PLAYER_W/2 + 18, py + 28); ctxp.stroke();
+  // legs
+  ctxp.beginPath(); ctxp.moveTo(px + PLAYER_W/2, py + 52); ctxp.lineTo(px + PLAYER_W/2 - 12, py + 80); ctxp.moveTo(px + PLAYER_W/2, py + 52); ctxp.lineTo(px + PLAYER_W/2 + 12, py + 80); ctxp.stroke();
+  // draw face
+  const fakePlayer = {x:px, y:py-12, char:char}; drawFace(ctxp, fakePlayer);
+  // draw weapon simple icon
+  ctxp.fillStyle = shadeColor(char.color, -20);
+  if(char.weapon === 'sword' || char.weapon === 'katana'){ ctxp.fillRect(px + PLAYER_W/2 + 14, py + 20, 28, 4); }
+  else if(char.weapon === 'spear'){ ctxp.fillRect(px + PLAYER_W/2 + 8, py + 16, 36, 3); }
+  else if(char.weapon === 'gun' || char.weapon === 'pistol'){ roundRect(ctxp, px + PLAYER_W/2 + 16, py + 18, 18, 8, 3, '#333'); }
+  else if(char.weapon === 'staff'){ ctxp.beginPath(); ctxp.moveTo(px + PLAYER_W/2 + 12, py + 18); ctxp.lineTo(px + PLAYER_W/2 + 12, py + 4); ctxp.stroke(); ctxp.fillStyle='#9cf'; circle(ctxp, px + PLAYER_W/2 + 12, py + 4, 4, '#9cf'); }
   ctxp.restore();
 }
 
@@ -386,13 +390,20 @@ const input = {
 
 // default characters (will be selectable in overlay)
 const CHARACTERS = [
-  {name:'Pakor', color:'#6a0dad', scale:1.2, face:'pakor', desc:'Heavy bruiser. Special: shockwave.'},
-  {name:'Lina', color:'#0aa', scale:1.0, face:'lina', desc:'Balanced fighter. Special: dash punch.'},
-  {name:'Mini', color:'#f45', scale:0.85, face:'mini', desc:'Quick & small. Special: quick heal.'}
+  {name:'Blade', color:'#6a0dad', scale:1.0, face:'grim', weapon:'sword', outfit:'leather', desc:'Sword wielder.'},
+  {name:'Gunner', color:'#0aa', scale:1.0, face:'goggles', weapon:'gun', outfit:'coat', desc:'Ranged shooter.'},
+  {name:'Spear', color:'#f45', scale:1.0, face:'stoic', weapon:'spear', outfit:'wrap', desc:'Long reach.'},
+  {name:'Mage', color:'#3af', scale:1.0, face:'wizard', weapon:'staff', outfit:'robe', desc:'Magic staff.'},
+  {name:'Shield', color:'#f9a', scale:1.0, face:'calm', weapon:'shield', outfit:'armor', desc:'Defender.'},
+  {name:'Ninja', color:'#ccc', scale:0.95, face:'masked', weapon:'katana', outfit:'ninja', desc:'Fast and sneaky.'},
+  {name:'Samurai', color:'#d24', scale:1.05, face:'stern', weapon:'katana', outfit:'samurai', desc:'Disciplined swordsman.'},
+  {name:'Brawler', color:'#d58', scale:1.05, face:'scruffy', weapon:'fists', outfit:'shirt', desc:'Close-range brawler.'},
+  {name:'Archer', color:'#6c3', scale:0.95, face:'focused', weapon:'bow', outfit:'leather', desc:'Ranged archer.'},
+  {name:'Medic', color:'#5cf', scale:1.0, face:'smile', weapon:'pistol', outfit:'med', desc:'Support with heals.'}
 ];
 
-const p1 = new Player(120, CHARACTERS[1].color, {left:'a', right:'d', jump:'w', attack:'f'}, CHARACTERS[1]);
-const p2 = new Player(W-180, CHARACTERS[0].color, {left:'ArrowLeft', right:'ArrowRight', jump:'ArrowUp', attack:'/'}, CHARACTERS[0]);
+const p1 = new Player(120, CHARACTERS[0].color, {left:'a', right:'d', jump:'w', attack:'f'}, CHARACTERS[0]);
+const p2 = new Player(W-180, CHARACTERS[1].color, {left:'ArrowLeft', right:'ArrowRight', jump:'ArrowUp', attack:'/'}, CHARACTERS[1]);
 
 // maps
 const MAPS = [
@@ -460,37 +471,56 @@ document.getElementById('toggleAnim').addEventListener('click', ()=>{ animEnable
 // wire up the start/selection UI
 function makeCharButton(char, side){
   const btn = document.createElement('button'); btn.style.display='block'; btn.style.margin='6px 0'; btn.textContent = char.name + ' — ' + char.desc; btn.onclick = ()=>{
-    if(side==='p1') selectedP1 = char; else selectedP2 = char;
+    if(side === 'p1'){
+      selectedP1 = char;
+      selectionStage = 'p2';
+    } else {
+      // only allow p2 selection after p1
+      if(selectionStage === 'p1') return;
+      selectedP2 = char;
+    }
     updateCharHighlights();
+    // auto-focus p2 preview after p1 picks
+    if(selectionStage === 'p2'){
+      try{ document.getElementById('p2preview').scrollIntoView({behavior:'smooth', block:'center'}); }catch(e){}
+    }
   };
   return btn;
 }
 
 let selectedP1 = null, selectedP2 = null;
+let selectionStage = 'p1'; // selection order: 'p1' then 'p2'
 function updateCharHighlights(){
   const p1c = document.getElementById('p1chars'); const p2c = document.getElementById('p2chars');
   p1c.innerHTML=''; p2c.innerHTML='';
-  CHARACTERS.forEach(ch=>{ const b1 = makeCharButton(ch,'p1'); const b2 = makeCharButton(ch,'p2');
+  CHARACTERS.forEach(ch=>{
+    const b1 = makeCharButton(ch,'p1'); const b2 = makeCharButton(ch,'p2');
+    // disable buttons for the side that is not active
+    if(selectionStage === 'p1') b2.disabled = true; else if(selectionStage === 'p2') b1.disabled = true;
     if(selectedP1 && selectedP1.name===ch.name) b1.style.background='#2a8';
     if(selectedP2 && selectedP2.name===ch.name) b2.style.background='#f85';
     p1c.appendChild(b1); p2c.appendChild(b2);
   });
-  // update previews
-  drawCharPreview('p1preview', selectedP1 || CHARACTERS[1]);
-  drawCharPreview('p2preview', selectedP2 || CHARACTERS[0]);
+  // update previews (show sensible defaults)
+  drawCharPreview('p1preview', selectedP1 || CHARACTERS[0]);
+  drawCharPreview('p2preview', selectedP2 || CHARACTERS[1]);
 }
 
 document.getElementById('startGame').addEventListener('click', ()=>{
-  if(!selectedP1) selectedP1 = CHARACTERS[1]; if(!selectedP2) selectedP2 = CHARACTERS[0];
+  if(!selectedP1) selectedP1 = CHARACTERS[0]; if(!selectedP2) selectedP2 = CHARACTERS[1];
   // apply selections
   p1.char = selectedP1; p1.color = selectedP1.color; p2.char = selectedP2; p2.color = selectedP2.color;
-  // reset positions and close overlay
-  p1.x = 120; p2.x = W-180; p1.y = p2.y = GROUND_Y - PLAYER_H; p1.vx=p1.vy=p2.vx=p2.vy=0;
+  // reset positions and close overlay — place players near center of the world so they're visible
+  const center = Math.round(worldWidthScaled/2);
+  p1.x = Math.max(20, center - 160); p2.x = Math.min(worldWidthScaled - PLAYER_W - 20, center + 160);
+  p1.y = p2.y = GROUND_Y - PLAYER_H; p1.vx=p1.vy=p2.vx=p2.vy=0;
   // apply selected map
   selectedMap = document.getElementById('mapSelect') ? document.getElementById('mapSelect').value : selectedMap;
   document.getElementById('charSelect').style.display='none';
   createPlatformsForMap(selectedMap);
   initStars();
+  // ensure round restarts so game is playable immediately
+  resetRound();
 });
 
 // populate selection UI
@@ -863,7 +893,11 @@ function draw(){
 }
 
 function resetRound(){
-  p1.x = 120; p2.x = W-180; p1.health = p1.maxHealth; p2.health = p2.maxHealth; p1.vx = p1.vy = p2.vx = p2.vy = 0; p1.stun = p1.invuln = p1.combo = p1.comboTimer = 0; p2.stun = p2.invuln = p2.combo = p2.comboTimer = 0; roundActive = true; particles.length = 0; ui.round.textContent = round; }
+  // place players near the center of the scaled world so they're visible
+  const center = Math.round(worldWidthScaled/2);
+  p1.x = Math.max(20, center - 160);
+  p2.x = Math.min(worldWidthScaled - PLAYER_W - 20, center + 160);
+  p1.health = p1.maxHealth; p2.health = p2.maxHealth; p1.vx = p1.vy = p2.vx = p2.vy = 0; p1.stun = p1.invuln = p1.combo = p1.comboTimer = 0; p2.stun = p2.invuln = p2.combo = p2.comboTimer = 0; roundActive = true; particles.length = 0; ui.round.textContent = round; }
 
 function newRound(){ round++; ui.round.textContent = round; resetRound(); }
 
