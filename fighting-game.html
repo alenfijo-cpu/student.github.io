@@ -74,7 +74,9 @@ class Player{
          // ranged attack: spawn a projectile straight in facing direction, no auto-aim
          this.attackTimer = 18; this.attackHit = true; this.attackCooldownTimer = this.attackCooldownBase || 48;
          const px = this.x + PLAYER_W/2 + this.facing*18;
-         spawnProjectile(px, this.y+30, this.facing*10, 0, this, this.attackDamage||8, 4, '#48b');
+            // shoot straight in facing direction only; if holding jump while shooting, fire upward
+            const svy = input && input.jump ? -4 : 0;
+            spawnProjectile(px, this.y+30, this.facing*10, svy, this, this.attackDamage||8, 4, '#48b');
         for(let i=0;i<6;i++) particles.push({x:px, y:this.y+28, vx:(Math.random()*2-1)+this.facing*1.5, vy:(Math.random()*-2)-0.5, life:20, color:'#6cf'});
       } else {
         this.attackTimer=18; this.attackHit=false; this.attackCooldownTimer = this.attackCooldownBase || 18;
@@ -201,15 +203,15 @@ function applyWeaponConfig(pl){
   pl.ranged = false;
   // defaults
   pl.attackDamage = 12; pl.attackCooldownBase = 18;
-  if(name==='Blade' || name==='Samurai'){ pl.attackDamage = 16; pl.attackCooldownBase = 28; }
-  else if(name==='Gunner'){ pl.attackDamage = 8; pl.attackCooldownBase = 48; pl.ranged = true; }
-  else if(name==='Spear'){ pl.attackDamage = 20; pl.attackCooldownBase = 34; }
-  else if(name==='Mage'){ pl.attackDamage = 12; pl.attackCooldownBase = 44; }
-  else if(name==='Shield'){ pl.attackDamage = 8; pl.attackCooldownBase = 36; }
-  else if(name==='Ninja'){ pl.attackDamage = 12; pl.attackCooldownBase = 22; }
-  else if(name==='Brawler'){ pl.attackDamage = 18; pl.attackCooldownBase = 26; }
-  else if(name==='Archer'){ pl.attackDamage = 10; pl.attackCooldownBase = 56; pl.ranged = true; }
-  else if(name==='Medic'){ pl.attackDamage = 6; pl.attackCooldownBase = 40; }
+  if(name==='Blade' || name==='Samurai'){ pl.attackDamage = 16; pl.attackCooldownBase = 18; }
+  else if(name==='Gunner'){ pl.attackDamage = 8; pl.attackCooldownBase = 28; pl.ranged = true; }
+  else if(name==='Spear'){ pl.attackDamage = 20; pl.attackCooldownBase = 20; }
+  else if(name==='Mage'){ pl.attackDamage = 12; pl.attackCooldownBase = 28; }
+  else if(name==='Shield'){ pl.attackDamage = 8; pl.attackCooldownBase = 24; }
+  else if(name==='Ninja'){ pl.attackDamage = 12; pl.attackCooldownBase = 18; }
+  else if(name==='Brawler'){ pl.attackDamage = 18; pl.attackCooldownBase = 20; }
+  else if(name==='Archer'){ pl.attackDamage = 10; pl.attackCooldownBase = 34; pl.ranged = true; }
+  else if(name==='Medic'){ pl.attackDamage = 6; pl.attackCooldownBase = 20; }
 }
 // global start function (also used by inline onclick attribute)
 function startGame(){
@@ -246,11 +248,12 @@ function aiPoll(ai, opponent){
   // prefer ranged if Gunner/Archer
   const name = ai.char && ai.char.name ? ai.char.name : 'Default';
   if((name==='Gunner' || name==='Archer')){
-    if(dist > 180) { attack = (state.atkCd<=0) && Math.random()<0.03; }
-    else { attack = (state.atkCd<=0) && Math.random()<0.15; }
+    if(ai.attackCooldownTimer>0) attack = false;
+    else if(dist > 180) { attack = Math.random()<0.03; }
+    else { attack = Math.random()<0.15; }
   } else {
     // melee: approach and attack when close
-    if(dist < 92 && state.atkCd<=0){ attack = true; state.atkCd = 48 + Math.floor(Math.random()*24); }
+    if(dist < 92 && ai.attackCooldownTimer<=0){ attack = true; ai.attackCooldownTimer = 36 + Math.floor(Math.random()*12); }
     if(dist > 140) { /* move closer */ }
   }
   // dodge projectiles: if a projectile is heading toward AI and close, dash sometimes
