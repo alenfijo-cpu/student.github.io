@@ -52,6 +52,7 @@ class Player{
     this.maxJumps=2; this.jumpsLeft=this.maxJumps; this.coyote=0; this.coyoteTime=8;
     this.dashCooldown=0; this.dashTimer=0; this.lastDamaged=0; this._shield=0; this.stun=0;
     this._prevJump=false; this._prevDash=false; this.attackBoost=1;
+    this.attackCooldownBase = 18; this.attackCooldownTimer = 0; this.attackDamage = 12; this.ranged = false;
   }
   rect(){return {x:this.x,y:this.y,w:PLAYER_W,h:PLAYER_H};}
   takeDamage(amount, source){ if(this._shield){ amount = Math.round(amount*0.5); if(source && source.owner) source.owner.ultMeter = Math.min(100,(source.owner.ultMeter||0)+8); } this.health = Math.max(0,this.health-amount); this.lastDamaged = performance.now(); }
@@ -67,8 +68,21 @@ class Player{
     if(!landed) this.onGround=false;
     this.x=clamp(this.x,8,WORLD_W-PLAYER_W-8);
     if(input.left) this.facing=-1; if(input.right) this.facing=1;
-    if(input.attack && this.attackTimer<=0){ this.attackTimer=18; this.attackHit=false; }
+    if(input.attack && this.attackCooldownTimer<=0 && this.attackTimer<=0){
+      const name = this.char && this.char.name ? this.char.name : 'Default';
+      if(name==='Gunner' || name==='Archer'){
+         // ranged attack: spawn a projectile straight in facing direction, no auto-aim
+         this.attackTimer = 18; this.attackHit = true; this.attackCooldownTimer = this.attackCooldownBase || 48;
+         const px = this.x + PLAYER_W/2 + this.facing*18;
+         spawnProjectile(px, this.y+30, this.facing*10, 0, this, this.attackDamage||8, 4, '#48b');
+        for(let i=0;i<6;i++) particles.push({x:px, y:this.y+28, vx:(Math.random()*2-1)+this.facing*1.5, vy:(Math.random()*-2)-0.5, life:20, color:'#6cf'});
+      } else {
+        this.attackTimer=18; this.attackHit=false; this.attackCooldownTimer = this.attackCooldownBase || 18;
+      }
+    }
     if(this.attackTimer>0) this.attackTimer--;
+    if(this.attackTimer<=0) this.attackHit=false;
+    if(this.attackCooldownTimer>0) this.attackCooldownTimer--;
     if(this.ultCooldown>0) this.ultCooldown--; this.ultReady = this.ultMeter>=100 && this.ultCooldown<=0;
     const now=performance.now(); if(now-(this.lastDamaged||0)>3000 && this.health<this.maxHealth) this.health = Math.min(this.maxHealth,this.health+0.18);
     this.anim++;
@@ -79,13 +93,86 @@ class Player{
     ctx.strokeStyle=this.color; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(sx+PLAYER_W/2,sy+28); ctx.lineTo(sx+PLAYER_W/2,sy+48); ctx.stroke();
     const swing=Math.sin(this.anim*0.2)*(Math.abs(this.vx)>0.5?0.9:0.2); ctx.beginPath(); ctx.moveTo(sx+PLAYER_W/2-18,sy+36+swing*6); ctx.lineTo(sx+PLAYER_W/2+18,sy+36-swing*6); ctx.stroke();
     ctx.beginPath(); ctx.moveTo(sx+PLAYER_W/2,sy+48); ctx.lineTo(sx+PLAYER_W/2-12-swing*6,sy+84); ctx.moveTo(sx+PLAYER_W/2,sy+48); ctx.lineTo(sx+PLAYER_W/2+12+swing*6,sy+84); ctx.stroke();
-    this.drawWeapon(ctx,sx,sy);
+    if(this.attackTimer>0){
+      this.drawAttackWeapon(ctx,sx,sy);
+    } else {
+      this.drawWeapon(ctx,sx,sy);
+    }
     ctx.fillStyle='#222'; ctx.fillRect(sx-8,sy-18,PLAYER_W+16,10); ctx.fillStyle='#8ef'; ctx.fillRect(sx-8,sy-18,Math.round((this.health/this.maxHealth)*(PLAYER_W+16)),10);
     ctx.fillStyle='#222'; ctx.fillRect(sx-8,sy-6,PLAYER_W+16,6); ctx.fillStyle=this.ultReady? '#ffd54f':'#8a8'; ctx.fillRect(sx-8,sy-6,Math.round(((this.ultMeter||0)/100)*(PLAYER_W+16)),6);
     if(this._shield){ ctx.strokeStyle='rgba(255,213,79,0.9)'; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(sx+PLAYER_W/2,sy+14,18,0,Math.PI*2); ctx.stroke(); }
   }
-  drawWeapon(ctx,sx,sy){ const name=this.char&&this.char.name?this.char.name:'Default'; const d=this.facing; if(name==='Blade'||name==='Samurai'){ ctx.strokeStyle=this.color; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx+PLAYER_W/2+(d>0?12:-12),sy+32); ctx.lineTo(sx+PLAYER_W/2+(d>0?44:-44),sy+22); ctx.stroke(); } else if(name==='Spear'){ ctx.strokeStyle=this.color; ctx.lineWidth=4; ctx.beginPath(); ctx.moveTo(sx+PLAYER_W/2+(d>0?12:-12),sy+36); ctx.lineTo(sx+PLAYER_W/2+(d>0?48:-48),sy+36); ctx.stroke(); ctx.fillStyle=this.color; ctx.beginPath(); ctx.arc(sx+PLAYER_W/2+(d>0?50:-50),sy+36,4,0,Math.PI*2); ctx.fill(); } else if(name==='Archer'){ ctx.strokeStyle=this.color; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx+PLAYER_W/2+(d>0?8:-8),sy+28); ctx.lineTo(sx+PLAYER_W/2+(d>0?42:-42),sy+20); ctx.moveTo(sx+PLAYER_W/2+(d>0?42:-42),sy+20); ctx.lineTo(sx+PLAYER_W/2+(d>0?40:-40),sy+28); ctx.stroke(); } else if(name==='Mage'){ ctx.fillStyle=this.color; ctx.globalAlpha=0.8; for(let i=0;i<3;i++){ ctx.beginPath(); ctx.arc(sx+PLAYER_W/2+(d>0?16:-16)+i*8,sy+30+Math.sin(this.anim*0.1+i)*4,3,0,Math.PI*2); ctx.fill(); } ctx.globalAlpha=1; } else if(name==='Brawler'){ ctx.fillStyle=this.color; const fx=sx+PLAYER_W/2+(d>0?24:-24), fy=sy+36; ctx.fillRect(fx-6,fy-8,12,16); } else if(name==='Ninja'){ ctx.strokeStyle=this.color; ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(sx+PLAYER_W/2+(d>0?10:-10),sy+28); ctx.lineTo(sx+PLAYER_W/2+(d>0?40:-40),sy+28); ctx.moveTo(sx+PLAYER_W/2+(d>0?40:-40),sy+24); ctx.lineTo(sx+PLAYER_W/2+(d>0?40:-40),sy+32); ctx.stroke(); } else if(name==='Gunner'){ ctx.fillStyle=this.color; ctx.beginPath(); ctx.arc(sx+PLAYER_W/2+(d>0?32:-32),sy+32,5,0,Math.PI*2); ctx.fill(); ctx.fillRect(sx+PLAYER_W/2+(d>0?12:-12),sy+30,d>0?20:-20,4); } else if(name==='Shield'){ ctx.fillStyle=this.color; ctx.globalAlpha=0.6; ctx.beginPath(); ctx.arc(sx+PLAYER_W/2+(d>0?28:-28),sy+32,12,0,Math.PI*2); ctx.fill(); ctx.globalAlpha=1; } else if(name==='Medic'){ ctx.strokeStyle=this.color; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(sx+PLAYER_W/2+(d>0?20:-20),sy+24); ctx.lineTo(sx+PLAYER_W/2+(d>0?20:-20),sy+40); ctx.moveTo(sx+PLAYER_W/2+(d>0?12:-12),sy+32); ctx.lineTo(sx+PLAYER_W/2+(d>0?28:-28),sy+32); ctx.stroke(); } else { ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.fillRect(sx + (d===1?PLAYER_W:-20), sy+30, 28, 18); } }
-  drawAttackWeapon(ctx,sx,sy){ this.drawWeapon(ctx,sx,sy); }
+  drawWeapon(ctx,sx,sy){
+    const name=this.char&&this.char.name?this.char.name:'Default';
+    const d=this.facing;
+    // emoji mapping for quick visual identification
+    const EMOJI = {
+      Blade: '⚔️', Samurai: '⚔️', Gunner: '🔫', Spear: '🗡️', Archer: '🏹', Mage: '🔮', Shield: '🛡️', Ninja: '🥷', Brawler: '🥊', Medic: '🩺', Default: '🔧'
+    };
+    const em = EMOJI[name] || EMOJI.Default;
+    ctx.save();
+    ctx.font = '28px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // faint background to make emoji readable
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.beginPath(); ctx.arc(sx+PLAYER_W/2 + d*28, sy+32, 20, 0, Math.PI*2); ctx.fill();
+    // emoji (color rendered by system font)
+    ctx.fillStyle = this.color || '#fff'; ctx.fillText(em, sx+PLAYER_W/2 + d*28, sy+32);
+    ctx.restore();
+  }
+  drawAttackWeapon(ctx,sx,sy){
+    const name=this.char&&this.char.name?this.char.name:'Default';
+    const d=this.facing;
+    const EMOJI = { Blade: '⚔️', Samurai: '⚔️', Gunner: '🔫', Spear: '🗡️', Archer: '🏹', Mage: '🔮', Shield: '🛡️', Ninja: '🥷', Brawler: '🥊', Medic: '🩺', Default: '🔧' };
+    const em = EMOJI[name] || EMOJI.Default;
+    if(this.attackTimer>0){
+      const phase = (18 - this.attackTimer) / 18;
+      const sxOff = sx+PLAYER_W/2 + d*(28 + phase*36);
+      const syOff = sy+24 - phase*10;
+      ctx.save(); ctx.translate(sxOff, syOff); ctx.rotate(d*( -0.35 + phase*0.9));
+      ctx.font = (34 + Math.round(10*phase)) + 'px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.beginPath(); ctx.arc(0,0,22+phase*8,0,Math.PI*2); ctx.fill();
+      // Blade / Samurai split-sword visual
+      if(name==='Blade' || name==='Samurai'){
+        const gap = 12 + phase*18;
+        ctx.fillStyle = this.color || '#fff'; ctx.fillText('⚔️', -gap, 0); ctx.fillText('⚔️', gap, 0);
+      } else {
+        ctx.fillStyle = this.color || '#fff'; ctx.fillText(em, 0, 0);
+      }
+      ctx.restore();
+      for(let i=0;i<2;i++) particles.push({x:sxOff + (Math.random()-0.5)*12, y:syOff + (Math.random()-0.5)*12, vx:(Math.random()*2-1)+d*1.2, vy:(Math.random()*-2)-0.5, life:18, color:this.color});
+    } else {
+      this.drawWeapon(ctx,sx,sy);
+    }
+  }
+
+  attackHitbox(){
+    const name=this.char&&this.char.name?this.char.name:'Default';
+    const d=this.facing;
+    if(this.attackTimer<=0) return null;
+    // Blade: two split hitboxes (short & long)
+    if(name==='Blade' || name==='Samurai'){
+      const hb1 = { x: this.x + (d>0? PLAYER_W : -48), y: this.y+18, w: 48, h: 36 };
+      const hb2 = { x: this.x + (d>0? PLAYER_W+28 : -96), y: this.y+14, w: 64, h: 36 };
+      return [hb1,hb2];
+    }
+    if(name==='Spear'){
+      return { x: this.x + (d>0? PLAYER_W : -112), y: this.y+18, w: 112, h: 36 };
+    }
+    if(name==='Archer' || name==='Gunner'){
+      // no melee for ranged classes
+      return null;
+    }
+    if(name==='Mage'){
+      return { x: this.x + (d>0? PLAYER_W-8 : -56), y: this.y+6, w: 56, h: 56 };
+    }
+    if(name==='Brawler'){
+      return { x: this.x + (d>0? PLAYER_W : -64), y: this.y+24, w: 64, h: 44 };
+    }
+    // default short swing
+    return { x: this.x + (d>0? PLAYER_W : -56), y: this.y+24, w: 56, h: 32 };
+  }
 }
 
 // world
@@ -104,13 +191,33 @@ const p2=new Player(520,CHARACTERS[1].color,{left:'ArrowLeft',right:'ArrowRight'
 let selectedP1=0, selectedP2=1;
 function buildCharButtons(){ const p1wrap=document.getElementById('p1chars'), p2wrap=document.getElementById('p2chars'); p1wrap.innerHTML=''; p2wrap.innerHTML=''; CHARACTERS.forEach((c,i)=>{ const b1=document.createElement('button'); b1.className='char-btn'; b1.textContent=c.name; b1.onclick=()=>{ selectedP1=i; updateSelectionUI(); }; const b2=document.createElement('button'); b2.className='char-btn'; b2.textContent=c.name; b2.onclick=()=>{ selectedP2=i; updateSelectionUI(); }; p1wrap.appendChild(b1); p2wrap.appendChild(b2); }); updateSelectionUI(); }
 function updateSelectionUI(){ const p1wrap=document.getElementById('p1chars'), p2wrap=document.getElementById('p2chars'); Array.from(p1wrap.children).forEach((el,idx)=>el.classList.toggle('selected', idx===selectedP1)); Array.from(p2wrap.children).forEach((el,idx)=>el.classList.toggle('selected', idx===selectedP2)); }
-document.addEventListener('DOMContentLoaded', ()=>{ buildCharButtons(); document.getElementById('startBtn').addEventListener('click', ()=>{ p1.color=CHARACTERS[selectedP1].color; p2.color=CHARACTERS[selectedP2].color; p1.char=CHARACTERS[selectedP1]; p2.char=CHARACTERS[selectedP2]; p1.x=220; p2.x=520; spawnPickups(); document.getElementById('overlay').style.display='none'; }); });
+let ORIGINAL_OVERLAY_HTML = null;
+document.addEventListener('DOMContentLoaded', ()=>{ buildCharButtons(); const sb=document.getElementById('startBtn'); sb.addEventListener('click', ()=>{ p1.color=CHARACTERS[selectedP1].color; p2.color=CHARACTERS[selectedP2].color; p1.char=CHARACTERS[selectedP1]; p2.char=CHARACTERS[selectedP2]; applyWeaponConfig(p1); applyWeaponConfig(p2); p1.attackCooldownTimer=0; p2.attackCooldownTimer=0; p1.attackTimer=0; p2.attackTimer=0; p1.x=220; p2.x=520; spawnPickups(); document.getElementById('overlay').style.display='none'; p2IsAI=false; gameOver=false; requestAnimationFrame(gameTick); }); ORIGINAL_OVERLAY_HTML = document.getElementById('overlay').innerHTML; });
+// ensure initial weapon configs
+applyWeaponConfig(p1); applyWeaponConfig(p2);
+// apply weapon stats whenever characters are set
+function applyWeaponConfig(pl){
+  const name = pl.char && pl.char.name ? pl.char.name : 'Default';
+  pl.ranged = false;
+  // defaults
+  pl.attackDamage = 12; pl.attackCooldownBase = 18;
+  if(name==='Blade' || name==='Samurai'){ pl.attackDamage = 16; pl.attackCooldownBase = 28; }
+  else if(name==='Gunner'){ pl.attackDamage = 8; pl.attackCooldownBase = 48; pl.ranged = true; }
+  else if(name==='Spear'){ pl.attackDamage = 20; pl.attackCooldownBase = 34; }
+  else if(name==='Mage'){ pl.attackDamage = 12; pl.attackCooldownBase = 44; }
+  else if(name==='Shield'){ pl.attackDamage = 8; pl.attackCooldownBase = 36; }
+  else if(name==='Ninja'){ pl.attackDamage = 12; pl.attackCooldownBase = 22; }
+  else if(name==='Brawler'){ pl.attackDamage = 18; pl.attackCooldownBase = 26; }
+  else if(name==='Archer'){ pl.attackDamage = 10; pl.attackCooldownBase = 56; pl.ranged = true; }
+  else if(name==='Medic'){ pl.attackDamage = 6; pl.attackCooldownBase = 40; }
+}
 // global start function (also used by inline onclick attribute)
 function startGame(){
   p1.color = CHARACTERS[selectedP1].color;
   p2.color = CHARACTERS[selectedP2].color;
   p1.char = CHARACTERS[selectedP1];
   p2.char = CHARACTERS[selectedP2];
+  applyWeaponConfig(p1); applyWeaponConfig(p2);
   p1.x = 220; p2.x = 520;
   spawnPickups();
   const ov = document.getElementById('overlay'); if(ov) ov.style.display = 'none';
@@ -120,11 +227,63 @@ function startGame(){
 const keysDown={}; window.addEventListener('keydown',e=>{ keysDown[e.key]=true; }); window.addEventListener('keyup',e=>{ delete keysDown[e.key]; });
 function poll(map){ return { left:!!keysDown[map.left], right:!!keysDown[map.right], jump:!!keysDown[map.jump], attack:!!keysDown[map.attack], dash:!!keysDown[map.dash] }; }
 
+// game state flags
+let gameOver = false;
+let p2IsAI = false;
+
+// very simple AI input generator for player2
+function aiPoll(ai, opponent){
+  if(!ai._ai) ai._ai = { atkCd:0, dashCd:0 };
+  const state = ai._ai;
+  if(state.atkCd>0) state.atkCd--;
+  if(state.dashCd>0) state.dashCd--;
+  const dx = (opponent.x - ai.x);
+  const dist = Math.abs(dx);
+  const left = dx < -20;
+  const right = dx > 20;
+  const jump = false; // keep simple
+  let attack = false; let dash = false;
+  // prefer ranged if Gunner/Archer
+  const name = ai.char && ai.char.name ? ai.char.name : 'Default';
+  if((name==='Gunner' || name==='Archer')){
+    if(dist > 180) { attack = (state.atkCd<=0) && Math.random()<0.03; }
+    else { attack = (state.atkCd<=0) && Math.random()<0.15; }
+  } else {
+    // melee: approach and attack when close
+    if(dist < 92 && state.atkCd<=0){ attack = true; state.atkCd = 48 + Math.floor(Math.random()*24); }
+    if(dist > 140) { /* move closer */ }
+  }
+  // dodge projectiles: if a projectile is heading toward AI and close, dash sometimes
+  for(const pr of projectiles){ if(pr.owner !== ai){ const pdx = pr.x - ai.x; if(Math.abs(pdx) < 160 && Math.abs(pr.vx) > 4 && ((pr.vx>0 && pdx<0) || (pr.vx<0 && pdx>0))){ if(state.dashCd<=0 && Math.random()<0.28){ dash = true; state.dashCd = 80; break; } } } }
+  return { left: right?false:left, right: right, jump: jump, attack: attack, dash: dash };
+}
+
 // projectiles & particles
 const projectiles=[]; const particles=[];
 let screenShake = 0;
-function spawnProjectile(x,y,vx,vy,owner,damage,knock,color){ projectiles.push({x,y,vx,vy,life:200,owner,damage,knock,color}); }
-function updateProjectiles(){ for(let i=projectiles.length-1;i>=0;i--){ const pr=projectiles[i]; pr.x+=pr.vx; pr.y+=pr.vy; pr.life--; pr.vy+=0.08; if(pr.life<=0){ projectiles.splice(i,1); continue; } [p1,p2].forEach(pl=>{ if(pr.owner!==pl && rectsOverlap(pr,pl.rect())){ if(pl._shield){ pr.vx=-pr.vx*0.8; pr.owner=pl; pr.x+=pr.vx; return; } pl.takeDamage(pr.damage,pr); pl.vx += (pr.vx>0?1:-1)*pr.knock; pl.vy=-4; if(pr.owner) pr.owner.ultMeter = Math.min(100,(pr.owner.ultMeter||0)+14); spawnHit(pl.x+PLAYER_W/2, pl.y+24, pr.color); pr.life=0; } }); if(pr.life<=0) projectiles.splice(i,1);} }
+function spawnProjectile(x,y,vx,vy,owner,damage,knock,color){
+  // include size and per-projectile gravity (ranged owners shoot straight)
+  const gravity = (owner && owner.ranged) ? 0 : 0.08;
+  projectiles.push({x,y,vx,vy,life:200,owner,damage,knock,color,w:8,h:8,gravity});
+}
+function updateProjectiles(){
+  for(let i=projectiles.length-1;i>=0;i--){
+    const pr=projectiles[i];
+    pr.x += pr.vx; pr.y += pr.vy; pr.life--; pr.vy += (pr.gravity !== undefined ? pr.gravity : 0.08);
+    if(pr.life<=0){ projectiles.splice(i,1); continue; }
+    [p1,p2].forEach(pl=>{
+      if(pr.owner!==pl && rectsOverlap(pr,{x:pr.x,y:pr.y,w:pr.w||8,h:pr.h||8})){
+        if(pl._shield){ pr.vx = -pr.vx*0.8; pr.owner = pl; pr.x += pr.vx; return; }
+        pl.takeDamage(pr.damage,pr);
+        pl.vx += (pr.vx>0?1:-1)*pr.knock; pl.vy = -4;
+        if(pr.owner) pr.owner.ultMeter = Math.min(100,(pr.owner.ultMeter||0)+14);
+        spawnHit(pl.x+PLAYER_W/2, pl.y+24, pr.color);
+        pr.life = 0;
+      }
+    });
+    if(pr.life<=0) projectiles.splice(i,1);
+  }
+}
 function spawnHit(x,y,color){ for(let i=0;i<10;i++) particles.push({x,y,vx:(Math.random()*6-3),vy:(Math.random()*-4-1),life:30,color}); }
 function updateParticles(){ for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.x+=p.vx; p.y+=p.vy; p.vy+=0.2; p.life--; if(p.life<=0) particles.splice(i,1); } }
 
@@ -149,7 +308,12 @@ function triggerUltimate(actor,target){ const name = actor.char && actor.char.na
 }
 
 // game loop
-function gameTick(){ const raw1=poll(p1.keys), raw2=poll(p2.keys); const in1={left:raw1.left,right:raw1.right,jump:raw1.jump,attack:raw1.attack,dash:raw1.dash,jumpPressed:false,dashPressed:false}; const in2={left:raw2.left,right:raw2.right,jump:raw2.jump,attack:raw2.attack,dash:raw2.dash,jumpPressed:false,dashPressed:false}; in1.jumpPressed = raw1.jump && !p1._prevJump; in2.jumpPressed = raw2.jump && !p2._prevJump; p1._prevJump=raw1.jump; p2._prevJump=raw2.jump; in1.dashPressed = raw1.dash && !p1._prevDash; in2.dashPressed = raw2.dash && !p2._prevDash; p1._prevDash=raw1.dash; p2._prevDash=raw2.dash; in1.jump=raw1.jump; in2.jump=raw2.jump;
+function gameTick(){
+  const raw1 = poll(p1.keys);
+  const raw2 = p2IsAI ? aiPoll(p2,p1) : poll(p2.keys);
+  const in1={left:raw1.left,right:raw1.right,jump:raw1.jump,attack:raw1.attack,dash:raw1.dash,jumpPressed:false,dashPressed:false};
+  const in2={left:raw2.left,right:raw2.right,jump:raw2.jump,attack:raw2.attack,dash:raw2.dash,jumpPressed:false,dashPressed:false};
+  in1.jumpPressed = raw1.jump && !p1._prevJump; in2.jumpPressed = raw2.jump && !p2._prevJump; p1._prevJump=raw1.jump; p2._prevJump=raw2.jump; in1.dashPressed = raw1.dash && !p1._prevDash; in2.dashPressed = raw2.dash && !p2._prevDash; p1._prevDash=raw1.dash; p2._prevDash=raw2.dash; in1.jump=raw1.jump; in2.jump=raw2.jump;
   p1.update(in1); p2.update(in2);
   // attacks: explicit player checks to avoid invalid objects
   [[p1,p2],[p2,p1]].forEach(([att,def])=>{
@@ -159,14 +323,20 @@ function gameTick(){ const raw1=poll(p1.keys), raw2=poll(p2.keys); const in1={le
     }
     const h = typeof att.attackHitbox === 'function' ? att.attackHitbox() : null;
     if(h && def && !att.attackHit){
-      if(rectsOverlap(h,def.rect())){
-        const dmg = Math.round(12*(att.attackBoost||1));
-        def.takeDamage(dmg,att);
-        def.vx += att.facing*5; def.vy = -6;
-        att.attackHit = true; att.ultMeter = Math.min(100,(att.ultMeter||0)+10);
-        spawnHit(def.x+PLAYER_W/2,def.y+28,att.color);
-        screenShake = Math.max(screenShake, 6);
+      const hits = Array.isArray(h) ? h : [h];
+      let hitCount = 0;
+      for(const hb of hits){
+        if(rectsOverlap(hb,def.rect())){
+          const base = (att.attackDamage||12);
+          const dmg = Math.round(base*(att.attackBoost||1));
+          def.takeDamage(dmg,att);
+          def.vx += att.facing*5; def.vy = -6;
+          hitCount++;
+          spawnHit(def.x+PLAYER_W/2,def.y+28,att.color);
+          screenShake = Math.max(screenShake, 6);
+        }
       }
+      if(hitCount>0){ att.attackHit = true; att.ultMeter = Math.min(100,(att.ultMeter||0) + 10*hitCount); }
     }
   });
   updateProjectiles(); updateParticles(); updatePickups(); if(Math.random()<0.0022) spawnPickups(); if(keysDown['e'] && p1.ultReady){ triggerUltimate(p1,p2); keysDown['e']=false; } if(keysDown['l'] && p2.ultReady){ triggerUltimate(p2,p1); keysDown['l']=false; }
@@ -175,7 +345,13 @@ function gameTick(){ const raw1=poll(p1.keys), raw2=poll(p2.keys); const in1={le
   const shakeX = (Math.random()*2 - 1) * screenShake;
   render(clamp(cameraX + shakeX, 0, Math.max(0, WORLD_W - W)));
   screenShake *= 0.88;
-  requestAnimationFrame(gameTick);
+  // check for end of match
+  if(p1.health<=0 || p2.health<=0){
+    const winner = (p1.health<=0) ? (p2.char? p2.char.name : 'Player 2') : (p1.char? p1.char.name : 'Player 1');
+    endGame(winner);
+    return;
+  }
+  if(!gameOver) requestAnimationFrame(gameTick);
 }
 
 function render(cameraX){ ctx.fillStyle='#001022'; ctx.fillRect(0,0,W,H); for(const s of stars){ const par=0.3+s.z*0.65; const sx=(s.x)-cameraX*par; if(sx<-10||sx>W+10) continue; ctx.globalAlpha=0.7*s.z; ctx.fillStyle='#fff'; ctx.beginPath(); ctx.arc(sx,s.y,s.r,0,Math.PI*2); ctx.fill(); } ctx.globalAlpha=1; ctx.fillStyle='#071018'; ctx.fillRect(0,GROUND_Y,W,H-GROUND_Y); for(const p of platforms){ ctx.fillStyle='#2a2a2a'; ctx.fillRect(p.x-cameraX,p.y,p.w,p.h); ctx.strokeStyle='rgba(255,255,255,0.04)'; ctx.strokeRect(p.x-cameraX,p.y,p.w,p.h); } for(const pk of pickups){ const sx=pk.x-cameraX, sy=pk.y; pk.ttl++; if(pk.type==='health'){ ctx.fillStyle='#e44'; ctx.fillRect(sx,sy,pk.w,pk.h); ctx.fillStyle='#fff'; ctx.fillRect(sx+2,sy+2,4,12); ctx.fillRect(sx+10,sy+6,4,4); } else if(pk.type==='healing'){ ctx.fillStyle='#4e4'; ctx.beginPath(); ctx.arc(sx+pk.w/2,sy+pk.h/2,pk.w/2,0,Math.PI*2); ctx.fill(); ctx.fillStyle='#fff'; ctx.font='9px Arial'; ctx.textAlign='center'; ctx.fillText('+',sx+pk.w/2,sy+pk.h/2+2); } else if(pk.type==='damage'){ ctx.fillStyle='#fa6'; ctx.beginPath(); ctx.moveTo(sx+pk.w/2,sy); ctx.lineTo(sx+pk.w,sy+pk.h/2); ctx.lineTo(sx+pk.w/2,sy+pk.h); ctx.lineTo(sx,sy+pk.h/2); ctx.fill(); } else if(pk.type==='ult'){ ctx.fillStyle='#ffd54f'; ctx.fillRect(sx,sy,pk.w,pk.h); ctx.fillStyle='#f90'; ctx.font='10px Arial'; ctx.textAlign='center'; ctx.fillText('E',sx+pk.w/2,sy+pk.h/2+2); } } p1.draw(ctx,cameraX); p2.draw(ctx,cameraX); for(const pr of projectiles){ ctx.fillStyle=pr.color||'#fff'; ctx.fillRect(pr.x-cameraX,pr.y,8,8); } for(const pt of particles){ ctx.globalAlpha=pt.life/30; ctx.fillStyle=pt.color; ctx.fillRect(pt.x-cameraX,pt.y,3,3); ctx.globalAlpha=1; } ctx.fillStyle='#fff'; ctx.font='14px sans-serif'; ctx.fillText('P1: '+Math.round(p1.health),12,20); ctx.fillText('P2: '+Math.round(p2.health),W-90,20); }
@@ -211,6 +387,55 @@ render = function(cameraX){ __wrapRender(cameraX);
 
 // start
 p1.char = CHARACTERS[selectedP1]; p2.char = CHARACTERS[selectedP2]; initStars(); requestAnimationFrame(gameTick);
+
+// end-game and menu functions
+function endGame(winner){
+  gameOver = true;
+  const ov = document.getElementById('overlay');
+  if(!ov) return;
+  ov.innerHTML = `<h2>${winner} Wins!</h2>
+    <div style="margin-top:12px;display:flex;gap:10px;justify-content:center">
+      <button id="againBtn" class="char-btn">Play Again</button>
+      <button id="switchBtn" class="char-btn">Switch Characters</button>
+      <button id="aiBtn" class="char-btn">Play vs AI</button>
+    </div>
+    <div style="margin-top:10px;color:#bbb;text-align:center">Winner: ${winner}</div>`;
+  ov.style.display='block';
+  document.getElementById('againBtn').onclick = playAgain;
+  document.getElementById('switchBtn').onclick = switchCharacters;
+  document.getElementById('aiBtn').onclick = playVsAI;
+}
+
+function playAgain(){
+  // reset players, keep selected characters
+  p1.health = p1.maxHealth; p2.health = p2.maxHealth;
+  p1.ultMeter = 0; p2.ultMeter = 0; p1.attackHit=false; p2.attackHit=false;
+  p1.x = 220; p1.y = GROUND_Y-PLAYER_H; p2.x = 520; p2.y = GROUND_Y-PLAYER_H;
+  p1.vx = p1.vy = p2.vx = p2.vy = 0;
+  gameOver = false; p2IsAI = false;
+  applyWeaponConfig(p1); applyWeaponConfig(p2);
+  p1.attackCooldownTimer = p1.attackTimer = 0; p2.attackCooldownTimer = p2.attackTimer = 0;
+  const ov = document.getElementById('overlay'); if(ov) ov.style.display='none';
+  spawnPickups(); requestAnimationFrame(gameTick);
+}
+
+function switchCharacters(){
+  const ov = document.getElementById('overlay'); if(!ov) return;
+  ov.innerHTML = ORIGINAL_OVERLAY_HTML;
+  buildCharButtons(); ov.style.display='block';
+}
+
+function playVsAI(){
+  // set p2 to AI and restart
+  p2IsAI = true; p2.health = p2.maxHealth; p1.health = p1.maxHealth;
+  p1.x = 220; p1.y = GROUND_Y-PLAYER_H; p2.x = 520; p2.y = GROUND_Y-PLAYER_H;
+  p1.vx = p1.vy = p2.vx = p2.vy = 0; p2._ai = { atkCd:0, dashCd:0 };
+  gameOver = false;
+  applyWeaponConfig(p1); applyWeaponConfig(p2);
+  p1.attackCooldownTimer = p1.attackTimer = 0; p2.attackCooldownTimer = p2.attackTimer = 0;
+  const ov = document.getElementById('overlay'); if(ov) ov.style.display='none';
+  spawnPickups(); requestAnimationFrame(gameTick);
+}
 </script>
 </body>
 </html>
