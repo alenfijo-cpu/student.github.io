@@ -1,451 +1,211 @@
-  draw(ctx){
-    // stickman drawing with weapon and simple animation
-    ctx.save();
-    const rect = this.rect();
-    const cx = this.x + PLAYER_W/2, cy = this.y + 12; // head center
-    // head
-    circle(ctx, cx, cy, 12, '#ffd6b3');
-    // face
-    const fakePlayer = {x: this.x, y: this.y, char: this.char}; drawFace(ctx, fakePlayer);
-    // body line
-    ctx.strokeStyle = this.char.color; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(cx, cy + 12);
-    const hipY = this.y + rect.h - 20; ctx.lineTo(cx, hipY); ctx.stroke();
-    // arms (swing)
-    const swing = (this.animState === 'walk') ? Math.sin(this.frame * 0.6) * 0.9 : 0.15 * Math.sin(this.frame * 0.3);
-    ctx.beginPath(); ctx.moveTo(cx, cy + 20); ctx.lineTo(cx - 18 - swing * 8, cy + 28); ctx.moveTo(cx, cy + 20); ctx.lineTo(cx + 18 + swing * 8, cy + 28); ctx.stroke();
-    // legs
-    ctx.beginPath(); ctx.moveTo(cx, hipY); ctx.lineTo(cx - 12 + swing * 6, hipY + 28); ctx.moveTo(cx, hipY); ctx.lineTo(cx + 12 - swing * 6, hipY + 28); ctx.stroke();
-    // torso clothing (a small badge of color)
-    ctx.fillStyle = shadeColor(this.char.color, -10); roundRect(ctx, cx - 8, cy + 18, 16, 18, 6, ctx.fillStyle);
-    // weapon in right hand (relative to facing)
-    const handX = cx + (this.facing === 1 ? 18 + swing*6 : -18 - swing*6);
-    const handY = cy + 28;
-    ctx.strokeStyle = '#ddd'; ctx.lineWidth = 3;
-    if(this.char.weapon === 'sword' || this.char.weapon === 'katana'){
-      ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(handX + this.facing * 28, handY - 4); ctx.stroke();
-    } else if(this.char.weapon === 'spear'){
-      ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(handX + this.facing * 40, handY - 6); ctx.stroke(); circle(ctx, handX + this.facing * 40, handY - 6, 3, '#f5e');
-    } else if(this.char.weapon === 'gun' || this.char.weapon === 'pistol'){
-      roundRect(ctx, handX + this.facing*6, handY - 6, 18, 8, 3, '#333');
-    } else if(this.char.weapon === 'staff'){
-      ctx.beginPath(); ctx.moveTo(handX, handY); ctx.lineTo(handX + this.facing * 36, handY - 24); ctx.stroke(); circle(ctx, handX + this.facing * 36, handY - 24, 5, '#9cf');
-    } else if(this.char.weapon === 'bow'){
-      ctx.beginPath(); ctx.moveTo(handX - this.facing*6, handY - 6); ctx.quadraticCurveTo(handX + this.facing*8, handY, handX - this.facing*6, handY + 12); ctx.stroke();
-    } else if(this.char.weapon === 'fists'){
-      ctx.fillStyle = shadeColor(this.char.color,-30); circle(ctx, handX, handY, 5, ctx.fillStyle);
-    }
-    ctx.restore();
-    // draw combo above player
-    if(this.combo > 1){ ctx.fillStyle = '#ffeb3b'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(this.combo + 'x', this.x + PLAYER_W/2, this.y - 8); ctx.textAlign = 'start'; }
-  }
-      </div>
-      <div style="min-width:260px">
-        <h3 style="margin:4px">Choose Player 2</h3>
-        <canvas id="p2preview" width="200" height="260" style="background:#111;border-radius:6px;margin-bottom:8px"></canvas>
-        <div id="p2chars"></div>
-      </div>
-      <div style="min-width:220px;display:flex;flex-direction:column;gap:8px;align-items:flex-start">
-        <label>Map: <select id="mapSelect"><option>Arena</option><option>Forest</option><option>Rooftop</option></select></label>
-        <label>AI Difficulty: <select id="aiDifficulty"><option>Easy</option><option selected>Normal</option><option>Hard</option></select></label>
-        <button id="startGame">Start Game</button>
-        <div style="font-size:12px;color:#bbb;margin-top:6px">Controls: P1 A/D W S Shift F G (special) E (ultimate). P2 ←/→ ↑ ↓ M / . (special) L (ultimate).</div>
-      </div>
-    </div>
-    <div style="width:1220px;display:flex;justify-content:space-between;align-items:center">
-      <div class="controls">
-        <strong>Player 1:</strong> A/D = move, W = jump, F = attack
-        &nbsp; &nbsp;
-        <strong>Player 2:</strong> ←/→ = move, ↑ = jump, / (slash) or Numpad0 = attack
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>2D Fighting Game — Minimal</title>
+  <style>
+    html,body{height:100%;margin:0;background:#000;}
+    /* only show the canvas and the overlay selector until the game starts */
+    body>*:not(canvas):not(#overlay){display:none}
+    canvas{display:block;margin:0 auto;background:#001022; width:1280px; height:720px; border:6px solid #111; box-sizing:border-box}
+    #overlay{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:760px;background:rgba(6,10,18,0.98);color:#ddd;padding:18px;border-radius:10px;box-shadow:0 6px 30px rgba(0,0,0,0.6);z-index:30}
+    #overlay h2{margin:4px 0 10px 0;color:#fff}
+    .char-list{display:flex;gap:8px;flex-wrap:wrap}
+    .char-btn{background:#0b1220;border:1px solid #203040;padding:8px 10px;border-radius:6px;cursor:pointer;color:#fff}
+    .char-btn.selected{outline:3px solid #9cf}
+    .char-preview{width:120px;height:160px;background:#07101a;border-radius:6px;display:flex;align-items:center;justify-content:center}
+    .row{display:flex;gap:12px;align-items:center}
+  </style>
+</head>
+<body>
+  <div id="overlay">
+    <h2>Choose Characters</h2>
+    <div class="row">
+      <div>
+        <div style="font-size:13px;color:#9cf;margin-bottom:6px">Player 1</div>
+        <div id="p1chars" class="char-list"></div>
       </div>
       <div>
-        <button id="restart">Restart Round</button>
-        <button id="toggleAI">AI: Off</button>
-        <button id="toggleSfx">SFX: On</button>
-        <button id="toggleMusic">Music: Off</button>
-        <button id="toggleAnim">Anim: On</button>
+        <div style="font-size:13px;color:#f99;margin-bottom:6px">Player 2</div>
+        <div id="p2chars" class="char-list"></div>
+      </div>
+    </div>
+    <div style="margin-top:12px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:13px;color:#bbb">Pick characters for both players then press Start.</div>
+      <div>
+        <button id="startBtn" class="char-btn">Start Game</button>
       </div>
     </div>
   </div>
-
+  <canvas id="game" width="1280" height="720"></canvas>
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const W = canvas.width, H = canvas.height;
+let W = canvas.width, H = canvas.height;
+const GROUND_Y = H - 80;
+const PLAYER_W = 40, PLAYER_H = 64;
+const GRAVITY = 1.0;
+const FRICTION = 0.9;
 
-// Physics & tuning
-const GRAVITY = 0.9; // gravity strength
-const FRICTION = 0.88; // ground friction multiplier
-const GROUND_Y = H - 60;
-const PLAYER_W = 48, PLAYER_H = 72;
-const CROUCH_H = Math.round(PLAYER_H * 0.6);
-const ACCEL = 1.6; // ground acceleration per frame
-const AIR_ACCEL = 0.7; // air control
-const MAX_SPEED = 6.5; // max horizontal speed
-const JUMP_FORCE = -14; // initial jump velocity
+function clamp(v,a,b){return Math.max(a,Math.min(b,v));}
 
-let round = 1;
-let p1Wins = 0, p2Wins = 0;
-
-const ui = {
-  p1bar: document.getElementById('p1bar'),
-  p2bar: document.getElementById('p2bar'),
-  p1wins: document.getElementById('p1wins'),
-  p2wins: document.getElementById('p2wins'),
-  round: document.getElementById('round')
-}
-
-class Player {
-  constructor(x,color,controls,charData){
+class Player{
+  constructor(x,color,keys){
     this.x = x; this.y = GROUND_Y - PLAYER_H;
-    this.vx = 0; this.vy = 0; this.color = color;
-    this.facing = 1; // 1 = right, -1 = left
-    this.onGround = true;
-    this.health = 100;
-    this.maxHealth = 100;
-    this.attacking = false;
-    this.attackTimer = 0;
-    this.attackHitTriggered = false; // ensure single-hit per attack
-    this.attackDuration = 18;
-    this.attackActiveFrame = 8;
-    this.controls = controls; // object with keys for left,right,jump,attack
-    this.score = 0;
-    this.combo = 0;
-    this.comboTimer = 0;
-    this.stun = 0; // frames of hit stun
-    this.invuln = 0; // post-hit invulnerability frames
-    this.jumpHeld = false; // for variable jump
-    // animation
-    this.animState = 'idle';
-    this.frame = 0;
-    this.frameTimer = 0;
-    // movement extras
-    this.crouching = false;
-    this.sprinting = false;
-    this.dashTimer = 0;
-    this.dashCooldown = 0;
-    // character data (scale, face, special)
-    this.char = charData || {name:'Default', scale:1, face:'default', special:null};
-    this.ultMeter = 0; // 0..100
-    this.ultReady = false;
-    this.ultCooldown = 0;
+    this.vx = 0; this.vy = 0; this.color = color; this.facing = 1;
+    this.onGround = true; this.health = 100; this.attackTimer = 0; this.attackHit = false;
+    this.keys = keys; this.anim = 0;
   }
-  rect(){
-    const base = this.crouching ? CROUCH_H : PLAYER_H;
-    const h = Math.round(base * (this.char.scale || 1));
-    return {x:this.x,y:this.y,w:PLAYER_W,h};
-  }
-  attackHitbox(){
-    const reach = 28;
-    if(!this.attacking) return null;
-    if(this.facing===1) return {x:this.x+PLAYER_W, y:this.y+20, w:reach, h:20};
-    return {x:this.x - reach, y:this.y+20, w:reach, h:20};
-  }
+  rect(){return {x:this.x,y:this.y,w:PLAYER_W,h:PLAYER_H};}
   update(input){
-    const prevX = this.x, prevY = this.y;
-    // stun/invuln handling
-    if(this.stun > 0){ this.stun--; }
-    if(this.invuln > 0){ this.invuln--; }
-
-    // Movement blocked by stun
-    if(this.stun <= 0){
-      // Horizontal movement with better accel and max speed
-      if(input.left) { this.vx -= (this.onGround ? ACCEL : AIR_ACCEL); this.facing = -1; }
-      if(input.right) { this.vx += (this.onGround ? ACCEL : AIR_ACCEL); this.facing = 1; }
-    }
-
-    // crouch
-    this.crouching = !!input.crouch && this.onGround;
-
-    // jump (variable height when holding)
-    if(input.jump && this.onGround && !this.crouching){ this.vy = JUMP_FORCE; this.onGround = false; this.jumpHeld = true; }
-    if(!input.jump) this.jumpHeld = false;
-
+    // movement
+    if(input.left) this.vx -= 0.8; if(input.right) this.vx += 0.8;
+    // jump
+    if(input.jump && this.onGround){ this.vy = -16; this.onGround = false; }
+    // apply physics
+    this.vy += GRAVITY; this.vx *= FRICTION;
+    this.vx = clamp(this.vx, -8, 8);
+    this.x += this.vx; this.y += this.vy;
+    // ground
+    if(this.y + PLAYER_H >= GROUND_Y){ this.y = GROUND_Y - PLAYER_H; this.vy = 0; this.onGround = true; }
+    // facing
+    if(input.left) this.facing = -1; if(input.right) this.facing = 1;
     // attack
-    if(input.attack && !this.attacking && this.stun <= 0){ this.attacking = true; this.attackTimer = this.attackDuration; this.attackHitTriggered = false; if(sfxEnabled) playAttackSound(); }
-
-    // physics
-    // variable jump: reduce downward acceleration while holding jump and going up
-    if(this.vy < 0 && this.jumpHeld){ this.vy += GRAVITY * 0.34; } else { this.vy += GRAVITY; }
-
-    // sprint handling (increase max speed when sprint input active)
-    const currentMax = input.sprint ? MAX_SPEED * 1.5 : MAX_SPEED;
-
-    // apply friction and clamp speed
-    this.vx *= FRICTION;
-    if(this.vx > currentMax) this.vx = currentMax;
-    if(this.vx < -currentMax) this.vx = -currentMax;
-
-    this.x += this.vx;
-    this.y += this.vy;
-
-    // bounds & platform collision detection (top-only)
-    const ph = this.rect().h;
-    // start assuming not on platform
-    this.onGround = false;
-    // check platforms (resolve vertical collisions)
-    const prevBottom = prevY + ph;
-    const newBottom = this.y + ph;
-    for(const plat of platforms){
-      const platTop = plat.y;
-      // horizontal overlap
-      if(this.x + PLAYER_W > plat.x && this.x < plat.x + plat.w){
-        // landed on platform from above
-        if(prevBottom <= platTop && newBottom >= platTop){
-          this.y = platTop - ph; this.vy = 0; this.onGround = true; break;
-        }
-      }
-    }
-    // ground collision if still not on platform
-    if(!this.onGround && this.y + ph >= GROUND_Y){ this.y = GROUND_Y - ph; this.vy = 0; this.onGround = true; }
-    if(this.x < 10) { this.x = 10; this.vx = 0; }
-    if(this.x + PLAYER_W > worldWidthScaled-10){ this.x = worldWidthScaled-10-PLAYER_W; this.vx = 0; }
-
-    // block push collisions (horizontal push)
-    for(const b of blocks){
-      if(this.x < b.x + b.w && this.x + PLAYER_W > b.x && this.y < b.y + b.h && this.y + ph > b.y){
-        // landing on block from above: allow standing
-        const prevBottom = prevY + ph; const newBottom = this.y + ph;
-        if(prevBottom <= b.y && newBottom >= b.y){
-          this.y = b.y - ph; this.vy = 0; this.onGround = true;
-        }
-        // push block by player's horizontal velocity (vary by mass/type)
-        if(Math.abs(this.vx) > 0.5){
-          const mass = b.mass || 1;
-          const pushFactor = (b.type === 'heavy') ? 0.12 : 0.36;
-          b.vx += this.vx * (pushFactor / mass);
-        }
-        // simple separation: move player back to previous X
-        this.x = prevX; this.vx = 0;
-      }
-    }
-
-    if(this.attacking){
-      this.attackTimer -= 1;
-      if(this.attackTimer <= 0){ this.attacking = false; this.attackTimer = 0; this.attackHitTriggered = false; }
-    }
-
-    // ultimate state
-    if(this.ultMeter >= 100) this.ultReady = true; else this.ultReady = false;
-    if(this.ultCooldown > 0) this.ultCooldown--;
-
-    // combo timer
-    if(this.comboTimer > 0){ this.comboTimer--; } else { this.combo = 0; }
-
-    // animation state machine (simple)
-    if(animEnabled){
-      const prev = this.animState;
-      if(this.stun > 0) this.animState = 'hurt';
-      else if(this.attacking) this.animState = 'attack';
-      else if(!this.onGround) this.animState = 'jump';
-      else if(Math.abs(this.vx) > 0.8) this.animState = 'walk';
-      else this.animState = 'idle';
-
-      if(this.animState !== prev){ this.frame = 0; this.frameTimer = 0; }
-      this.frameTimer++;
-      if(this.frameTimer > 8){ this.frame = (this.frame + 1) % 4; this.frameTimer = 0; }
-    }
+    if(input.attack && this.attackTimer<=0){ this.attackTimer = 18; this.attackHit = false; }
+    if(this.attackTimer>0) this.attackTimer--;
+    // anim
+    this.anim += 1;
   }
-  draw(ctx){
-    // improved animated body
-    ctx.save();
-    const rect = this.rect();
-    const shirt = this.color;
-    const pants = shadeColor(this.color, -40);
-    const skin = '#ffd6b3';
-    // center the character drawing
-    ctx.translate(this.x + PLAYER_W/2, this.y + rect.h/2);
-    if(this.facing === -1) ctx.scale(-1,1);
-    ctx.translate(-PLAYER_W/2, -rect.h/2);
-
-    // subtle bobbing and movement-based offsets
-    let bob = 0;
-    if(this.animState === 'walk') bob = Math.sin(this.frame * 0.85) * 4;
-    else if(this.animState === 'idle') bob = Math.sin(this.frame * 0.25) * 1.2;
-    else if(this.animState === 'jump') bob = -6;
-
-    // head (slightly larger)
-    circle(ctx, PLAYER_W/2, 12 + bob, 14, skin);
-    roundRect(ctx, PLAYER_W/2 - 14, 0 + bob, 28, 12, 6, shadeColor(this.color, -70));
-    // neck
-    roundRect(ctx, PLAYER_W/2 - 6, 22 + bob, 12, 6, 3, skin);
-
-    // torso with stretch when sprinting
-    const torsoY = 30 + bob*0.25;
-    const torsoH = rect.h - 56;
-    roundRect(ctx, 12, torsoY, PLAYER_W-24, torsoH, 8, shirt);
-
-    // arm/leg swing based on animation frame
-    const armY = 34 + bob*0.2;
-    const armW = 8, armH = 30;
-    const walkSwing = Math.sin(this.frame * 0.6) * (this.animState === 'walk' ? 0.9 : 0.25);
-
-    // left arm
-    ctx.save(); ctx.translate(8, armY); ctx.rotate(walkSwing); roundRect(ctx, -armW/2, 0, armW, armH, 6, skin); ctx.restore();
-    // right arm (attack adds extra swing)
-    ctx.save(); ctx.translate(PLAYER_W - 12, armY); ctx.rotate(-walkSwing + (this.attacking ? -1.0 : 0)); roundRect(ctx, -armW/2, 0, armW, armH, 6, skin); ctx.restore();
-
+  draw(ctx, cameraX){
+    // draw stickman at screen position
+    const sx = Math.round(this.x - cameraX);
+    const sy = Math.round(this.y);
+    // head
+    ctx.fillStyle = '#ffd6b3'; ctx.beginPath(); ctx.arc(sx + PLAYER_W/2, sy + 12, 12, 0, Math.PI*2); ctx.fill();
+    // body
+    ctx.strokeStyle = this.color; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(sx + PLAYER_W/2, sy + 22); ctx.lineTo(sx + PLAYER_W/2, sy + 42); ctx.stroke();
+    // arms
+    const swing = Math.sin(this.anim * 0.2) * (Math.abs(this.vx) > 0.5 ? 0.9 : 0.2);
+    ctx.beginPath(); ctx.moveTo(sx + PLAYER_W/2 - 18, sy + 30 + swing*6); ctx.lineTo(sx + PLAYER_W/2 + 18, sy + 30 - swing*6); ctx.stroke();
     // legs
-    const legY = rect.h - 20;
-    const legSwing = Math.sin(this.frame * 0.6) * (this.animState === 'walk' ? 0.9 : 0.15);
-    ctx.save(); ctx.translate(14, legY); ctx.rotate(-legSwing); roundRect(ctx, -6, 0, 12, 18, 6, pants); ctx.restore();
-    ctx.save(); ctx.translate(PLAYER_W - 26, legY); ctx.rotate(legSwing); roundRect(ctx, -6, 0, 12, 18, 6, pants); ctx.restore();
-
-    // attack visual
-    if(this.attacking){ ctx.globalAlpha = 0.95; const a = (this.frame % 2 === 0) ? 0.2 : 0.08; ctx.fillStyle = `rgba(255,255,255,${a})`; ctx.fillRect(PLAYER_W-8, 18 + bob, 40, 26); ctx.globalAlpha = 1; }
-
-    ctx.restore();
-
-    // facial features (eyes/mouth) using drawFace helper
-    drawFace(ctx, this);
-
-    // draw combo above player
-    if(this.combo > 1){ ctx.fillStyle = '#ffeb3b'; ctx.font = '16px sans-serif'; ctx.textAlign = 'center'; ctx.fillText(this.combo + 'x', this.x + PLAYER_W/2, this.y - 8); ctx.textAlign = 'start'; }
+    ctx.beginPath(); ctx.moveTo(sx + PLAYER_W/2, sy + 42); ctx.lineTo(sx + PLAYER_W/2 - 10 - swing*6, sy + 68); ctx.moveTo(sx + PLAYER_W/2, sy + 42); ctx.lineTo(sx + PLAYER_W/2 + 10 + swing*6, sy + 68); ctx.stroke();
+    // attack flash
+    if(this.attackTimer > 6){ ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx + (this.facing===1?PLAYER_W: -20), sy + 24, 28, 18); }
+    // health bar
+    ctx.fillStyle = '#222'; ctx.fillRect(sx-6, sy-12, PLAYER_W+12, 6); ctx.fillStyle = '#8ef'; ctx.fillRect(sx-6, sy-12, Math.round((this.health/100)*(PLAYER_W+12)), 6);
   }
 }
 
-function roundRect(ctx,x,y,w,h,r,fill){ctx.beginPath();ctx.moveTo(x+r,y);ctx.arcTo(x+w,y,x+w,y+h,r);ctx.arcTo(x+w,y+h,x,y+h,r);ctx.arcTo(x,y+h,x,y,r);ctx.arcTo(x,y,x+w,y,r);ctx.closePath();ctx.fillStyle=fill;ctx.fill();}
-function circle(ctx,x,y,r,fill){ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fillStyle=fill;ctx.fill();}
+// inputs
+const keysDown = {};
+window.addEventListener('keydown', e=>{ keysDown[e.key]=true; });
+window.addEventListener('keyup', e=>{ delete keysDown[e.key]; });
+function poll(pmap){ return {
+  left: !!(keysDown[pmap.left]), right: !!(keysDown[pmap.right]), jump: !!(keysDown[pmap.jump]), attack: !!(keysDown[pmap.attack])
+}; }
 
-// utility: shade a hex color by percent (-100..100)
-function shadeColor(hex, percent) {
-  try{
-    const f=parseInt(hex.slice(1),16),t=percent<0?0:255,p=percent<0?percent*-1:percent;
-    const R=f>>16,G=f>>8&0x00FF,B=f&0x0000FF;
-    const newR = Math.round((t - R) * p/100) + R;
-    const newG = Math.round((t - G) * p/100) + G;
-    const newB = Math.round((t - B) * p/100) + B;
-    return `#${(0x1000000 + (newR<<16) + (newG<<8) + newB).toString(16).slice(1)}`;
-  }catch(e){return hex;}
-}
-
-// Draw facial features depending on character data
-function drawFace(ctx, player){
-  const face = player.char && player.char.face ? player.char.face : 'default';
-  // draw relative to player's head center
-  ctx.save();
-  ctx.translate(player.x + PLAYER_W/2, player.y + 12);
-  ctx.fillStyle = '#000';
-  if(face === 'grim'){
-    ctx.fillStyle = '#000'; ctx.fillRect(-8, -2, 6, 4); ctx.fillRect(4, -2, 6, 4);
-    ctx.fillStyle = '#700'; ctx.fillRect(-6, 8, 12, 3);
-  } else if(face === 'goggles'){
-    ctx.fillStyle = '#222'; ctx.fillRect(-10, -3, 20, 6); ctx.fillStyle = '#fff'; ctx.fillRect(-6, -1, 5, 3); ctx.fillRect(1, -1, 5, 3);
-  } else if(face === 'stoic'){
-    ctx.fillStyle = '#000'; ctx.fillRect(-7, -1, 4, 3); ctx.fillRect(3, -1, 4, 3); ctx.fillStyle='#600'; ctx.fillRect(-4,8,8,3);
-  } else if(face === 'wizard'){
-    ctx.fillStyle='#000'; ctx.fillRect(-6,-2,4,4); ctx.fillRect(2,-2,4,4); roundRect(ctx,-14,-10,28,8,4,'#aaf');
-  } else if(face === 'masked'){
-    ctx.fillStyle='#111'; ctx.fillRect(-8,-3,16,6); ctx.fillStyle='#fff'; ctx.fillRect(-4,-1,3,3); ctx.fillRect(1,-1,3,3);
-  } else if(face === 'smile'){
-    ctx.fillStyle='#000'; ctx.fillRect(-6,-1,4,3); ctx.fillRect(2,-1,4,3); ctx.fillStyle='#b00'; ctx.fillRect(-4,8,8,3);
-  } else {
-    ctx.fillStyle = '#000'; ctx.fillRect(-6, -2, 4, 4); ctx.fillRect(4, -2, 4, 4); ctx.fillStyle = '#600'; ctx.fillRect(-4, 8, 8, 3);
-  }
-  ctx.restore();
-}
-
-// draw a larger preview of a character on a canvas
-function drawCharPreview(canvasId, char){
-  const c = document.getElementById(canvasId);
-  if(!c) return;
-  const ctxp = c.getContext('2d');
-  ctxp.clearRect(0,0,c.width,c.height);
-  // center and scale
-  // draw a stickman preview centered
-  ctxp.save();
-  const px = c.width/2 - 20, py = 40;
-  // head
-  circle(ctxp, px + PLAYER_W/2, py, 14, '#ffd6b3');
-  // torso
-  ctxp.strokeStyle = char.color; ctxp.lineWidth = 4;
-  ctxp.beginPath(); ctxp.moveTo(px + PLAYER_W/2, py + 12); ctxp.lineTo(px + PLAYER_W/2, py + 52); ctxp.stroke();
-  // arms
-  ctxp.beginPath(); ctxp.moveTo(px + PLAYER_W/2 - 18, py + 28); ctxp.lineTo(px + PLAYER_W/2 + 18, py + 28); ctxp.stroke();
-  // legs
-  ctxp.beginPath(); ctxp.moveTo(px + PLAYER_W/2, py + 52); ctxp.lineTo(px + PLAYER_W/2 - 12, py + 80); ctxp.moveTo(px + PLAYER_W/2, py + 52); ctxp.lineTo(px + PLAYER_W/2 + 12, py + 80); ctxp.stroke();
-  // draw face
-  const fakePlayer = {x:px, y:py-12, char:char}; drawFace(ctxp, fakePlayer);
-  // draw weapon simple icon
-  ctxp.fillStyle = shadeColor(char.color, -20);
-  if(char.weapon === 'sword' || char.weapon === 'katana'){ ctxp.fillRect(px + PLAYER_W/2 + 14, py + 20, 28, 4); }
-  else if(char.weapon === 'spear'){ ctxp.fillRect(px + PLAYER_W/2 + 8, py + 16, 36, 3); }
-  else if(char.weapon === 'gun' || char.weapon === 'pistol'){ roundRect(ctxp, px + PLAYER_W/2 + 16, py + 18, 18, 8, 3, '#333'); }
-  else if(char.weapon === 'staff'){ ctxp.beginPath(); ctxp.moveTo(px + PLAYER_W/2 + 12, py + 18); ctxp.lineTo(px + PLAYER_W/2 + 12, py + 4); ctxp.stroke(); ctxp.fillStyle='#9cf'; circle(ctxp, px + PLAYER_W/2 + 12, py + 4, 4, '#9cf'); }
-  ctxp.restore();
-}
-
-// draw ultimate meter for a player at canvas coords
-function drawUlt(player, x, y){
-  const w = 140, h = 8; ctx.save(); ctx.fillStyle = '#222'; roundRect(ctx, x, y, w, h, 4, '#222');
-  const pct = (player.ultMeter||0)/100; ctx.fillStyle = player.ultReady ? '#ffd54f' : (player.char ? player.char.color : '#888');
-  roundRect(ctx, x, y, Math.round(w * pct), h, 4, ctx.fillStyle);
-  ctx.restore();
-}
-
-// players and inputs
-const input = {
-  p1: {left:false,right:false,jump:false,attack:false},
-  p2: {left:false,right:false,jump:false,attack:false}
-}
-
-// default characters (will be selectable in overlay)
-const CHARACTERS = [
-  {name:'Blade', color:'#6a0dad', scale:1.0, face:'grim', weapon:'sword', outfit:'leather', desc:'Sword wielder.'},
-  {name:'Gunner', color:'#0aa', scale:1.0, face:'goggles', weapon:'gun', outfit:'coat', desc:'Ranged shooter.'},
-  {name:'Spear', color:'#f45', scale:1.0, face:'stoic', weapon:'spear', outfit:'wrap', desc:'Long reach.'},
-  {name:'Mage', color:'#3af', scale:1.0, face:'wizard', weapon:'staff', outfit:'robe', desc:'Magic staff.'},
-  {name:'Shield', color:'#f9a', scale:1.0, face:'calm', weapon:'shield', outfit:'armor', desc:'Defender.'},
-  {name:'Ninja', color:'#ccc', scale:0.95, face:'masked', weapon:'katana', outfit:'ninja', desc:'Fast and sneaky.'},
-  {name:'Samurai', color:'#d24', scale:1.05, face:'stern', weapon:'katana', outfit:'samurai', desc:'Disciplined swordsman.'},
-  {name:'Brawler', color:'#d58', scale:1.05, face:'scruffy', weapon:'fists', outfit:'shirt', desc:'Close-range brawler.'},
-  {name:'Archer', color:'#6c3', scale:0.95, face:'focused', weapon:'bow', outfit:'leather', desc:'Ranged archer.'},
-  {name:'Medic', color:'#5cf', scale:1.0, face:'smile', weapon:'pistol', outfit:'med', desc:'Support with heals.'}
-];
-
-const p1 = new Player(120, CHARACTERS[0].color, {left:'a', right:'d', jump:'w', attack:'f'}, CHARACTERS[0]);
-const p2 = new Player(W-180, CHARACTERS[1].color, {left:'ArrowLeft', right:'ArrowRight', jump:'ArrowUp', attack:'/'}, CHARACTERS[1]);
-
-// maps
-const MAPS = [
-  {name:'Arena', render:(ctx)=>{ ctx.fillStyle = 'linear-gradient'; }},
-  {name:'Forest', render:(ctx)=>{ /* drawn in draw() using id */ }},
-  {name:'Rooftop', render:(ctx)=>{ /* drawn in draw() using id */ }}
-];
-let selectedMap = 'Arena';
-
-// platforms and pushable blocks
-let platforms = [];
-let blocks = []; // keep array but avoid creating movable blocks
-
-// world & background (space starfield)
-const WORLD_BASE_WIDTH = 3600; // base long background width
-let spacingMultiplier = 1; // scales background length based on players distance
-let worldWidthScaled = WORLD_BASE_WIDTH;
+// world
+const WORLD_W = 2400;
 const stars = [];
-function initStars(count = 320){ stars.length = 0; for(let i=0;i<count;i++){ stars.push({x: Math.random()*WORLD_BASE_WIDTH, y: 20 + Math.random()*(H-120), z: 0.2 + Math.random()*0.8, r: Math.random()*2.4 + 0.4}); } }
-function clamp(v,a,b){ return Math.max(a, Math.min(b, v)); }
+function initStars(n=200){ stars.length=0; for(let i=0;i<n;i++) stars.push({x:Math.random()*WORLD_W, y:20+Math.random()*(H-160), z:0.2+Math.random()*0.8, r:Math.random()*2+0.6}); }
+initStars();
 
-function createPlatformsForMap(map){
-  platforms.length = 0; blocks.length = 0;
-  if(map === 'Forest'){
-    platforms.push({x:140,y:260,w:180,h:12});
-    platforms.push({x:420,y:220,w:140,h:12});
-    platforms.push({x:620,y:300,w:120,h:12});
-    // no movable blocks for this map (static environment only)
-  } else if(map === 'Rooftop'){
-    platforms.push({x:80,y:260,w:160,h:12});
-    platforms.push({x:320,y:200,w:200,h:12});
-    platforms.push({x:560,y:260,w:160,h:12});
-    // no movable blocks for this map
-  } else {
-    // Arena
-    platforms.push({x:180,y:280,w:140,h:12});
-    platforms.push({x:460,y:240,w:160,h:12});
-    // arena uses static elements only — no movable blocks
-  }
+// available characters
+const CHARACTERS = [
+  {name:'Blade', color:'#6a0dad'},
+  {name:'Gunner', color:'#0aa'},
+  {name:'Spear', color:'#f45'},
+  {name:'Mage', color:'#3af'},
+  {name:'Shield', color:'#f9a'},
+  {name:'Ninja', color:'#ccc'},
+  {name:'Samurai', color:'#d24'},
+  {name:'Brawler', color:'#d58'},
+  {name:'Archer', color:'#6c3'},
+  {name:'Medic', color:'#5cf'}
+];
+
+// players (defaults until selection)
+const p1 = new Player(200, CHARACTERS[0].color, {left:'a', right:'d', jump:'w', attack:'f'});
+const p2 = new Player(520, CHARACTERS[1].color, {left:'ArrowLeft', right:'ArrowRight', jump:'ArrowUp', attack:'/'});
+
+// selection state
+let selectedP1 = 0, selectedP2 = 1;
+function buildCharButtons(){
+  const p1wrap = document.getElementById('p1chars');
+  const p2wrap = document.getElementById('p2chars');
+  p1wrap.innerHTML = '';
+  p2wrap.innerHTML = '';
+  CHARACTERS.forEach((c,i)=>{
+    const b1 = document.createElement('button'); b1.className='char-btn'; b1.textContent = c.name; b1.onclick = ()=>{ selectedP1 = i; updateSelectionUI(); };
+    const b2 = document.createElement('button'); b2.className='char-btn'; b2.textContent = c.name; b2.onclick = ()=>{ selectedP2 = i; updateSelectionUI(); };
+    p1wrap.appendChild(b1); p2wrap.appendChild(b2);
+  });
+  updateSelectionUI();
+}
+function updateSelectionUI(){
+  const p1wrap = document.getElementById('p1chars'); const p2wrap = document.getElementById('p2chars');
+  Array.from(p1wrap.children).forEach((el,idx)=> el.classList.toggle('selected', idx===selectedP1));
+  Array.from(p2wrap.children).forEach((el,idx)=> el.classList.toggle('selected', idx===selectedP2));
 }
 
-function updateBlocks(){
+// hook start button
+document.addEventListener('DOMContentLoaded', ()=>{
+  buildCharButtons();
+  document.getElementById('startBtn').addEventListener('click', ()=>{
+    // apply selected colors and reset positions
+    p1.color = CHARACTERS[selectedP1].color; p2.color = CHARACTERS[selectedP2].color;
+    p1.x = 200; p2.x = 520; p1.y = GROUND_Y - PLAYER_H; p2.y = GROUND_Y - PLAYER_H;
+    document.getElementById('overlay').style.display = 'none';
+  });
+});
+
+// game loop
+function gameLoop(){
+  const in1 = poll(p1.keys); const in2 = poll(p2.keys);
+  p1.update(in1); p2.update(in2);
+  // attacks: check hit when attackTimer at certain frame
+  [ [p1,p2], [p2,p1] ].forEach(([att,def])=>{
+    if(att.attackTimer === 8 && !att.attackHit){
+      // attack box
+      const ax = att.x + (att.facing===1? PLAYER_W : -28);
+      const ay = att.y + 24; const aw = 28; const ah = 18;
+      if(ax < def.x + def.w && ax + aw > def.x && ay < def.y + def.h && ay + ah > def.y){
+        def.health = Math.max(0, def.health - 12); def.vx += att.facing*6; def.vy = -6; att.attackHit = true;
+      }
+    }
+  });
+
+  // camera center between players
+  const camCenter = (p1.x + p2.x)/2; const cameraX = clamp(camCenter - W/2, 0, Math.max(0, WORLD_W - W));
+
+  draw(cameraX);
+  requestAnimationFrame(gameLoop);
+}
+
+function draw(cameraX){
+  // background
+  ctx.fillStyle = '#001022'; ctx.fillRect(0,0,W,H);
+  // stars parallax
+  for(const s of stars){ const par = 0.2 + s.z*0.8; const sx = (s.x) - cameraX*par; if(sx< -10 || sx>W+10) continue; ctx.globalAlpha = 0.7*s.z; ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(sx, s.y, s.r, 0, Math.PI*2); ctx.fill(); }
+  ctx.globalAlpha = 1;
+  // ground
+  ctx.fillStyle = '#08080a'; ctx.fillRect(0, GROUND_Y, W, H - GROUND_Y);
+  // players
+  p1.draw(ctx, cameraX); p2.draw(ctx, cameraX);
+  // simple HUD: health numbers
+  ctx.fillStyle = '#fff'; ctx.font = '18px sans-serif'; ctx.fillText('P1: ' + Math.round(p1.health), 12, 26); ctx.fillText('P2: ' + Math.round(p2.health), W-100, 26);
+}
+
+// make sure canvas size stays fixed internal but visible as set in CSS
+canvas.width = 1280; canvas.height = 720; W = canvas.width; H = canvas.height;
+
+// start positions and loop
+p1.x = 200; p2.x = 520; initStars(280);
+requestAnimationFrame(gameLoop);
+</script>
+</body>
+</html>
   // No movable blocks: blocks array remains empty and there is no per-frame block physics
   return;
 }
